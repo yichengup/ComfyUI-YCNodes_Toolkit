@@ -1,12 +1,13 @@
 # ComfyUI-YCNodes Toolkit
 
 
-## 主要节点/脚本简介
+## 主要节点简介
 
 ## BBox画布 (CanvasBBoX)
 <img width="655" height="660" alt="image" src="https://github.com/user-attachments/assets/57c4c591-e691-421e-930c-45cc6f9efac9" />
 
-我创建这个适合BBox的绘制的节点，基础的代码来自 https://github.com/Smirnov75/ComfyUI-mxToolkit
+我创建这个适合BBox的绘制的节点，实现可视化坐标标注、调试以及与外部数据的桥接，基础的代码来自 https://github.com/Smirnov75/ComfyUI-mxToolkit
+
 
 ## Load_Image_Brush_Mask
 <img width="776" height="700" alt="image" src="https://github.com/user-attachments/assets/7ae85504-db00-4eed-b7ac-82fa28bf2c8a" />
