@@ -20,4 +20,9 @@
 2. 确保安装 `requirements.txt` 中列出的 Python 依赖（见下节）。
 3. 启动或重启 ComfyUI，新的节点会自动出现在 `YCNodes Toolkit` 分类下。
 
+## 关于我 | About me
+
+Bilibili：[我的B站主页](https://space.bilibili.com/498399023?spm_id_from=333.1007.0.0)
+QQ号：3260561522
+wechat微信: DLONG189one
 
