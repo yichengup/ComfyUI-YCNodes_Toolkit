@@ -13,7 +13,7 @@
 <img width="776" height="700" alt="image" src="https://github.com/user-attachments/assets/7ae85504-db00-4eed-b7ac-82fa28bf2c8a" />
 
 在的加载图像上，直接绘制蒙版遮罩，不用打开comfyui mask编辑器
-
+注意：这个节点所在的工作流要导出前，先清掉图片（可以重建节点），放置导出的工作流过大。
 ## 使用方式
 
 1. 将整个 `custom_nodes/ComfyUI-YCNodes_Toolkit` 文件夹放入 ComfyUI 的 `custom_nodes` 目录。
