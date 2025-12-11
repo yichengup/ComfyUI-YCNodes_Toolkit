@@ -2,6 +2,7 @@
 
 
 ## 主要节点简介
+主要是一些前端类的节点集合，有趣，有用
 
 ## BBox画布 (CanvasBBoX)
 <img width="655" height="660" alt="image" src="https://github.com/user-attachments/assets/57c4c591-e691-421e-930c-45cc6f9efac9" />
