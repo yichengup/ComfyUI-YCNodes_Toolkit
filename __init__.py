@@ -2,6 +2,7 @@ import importlib.util
 import os
 import sys
 import json
+import traceback
 
 NODE_CLASS_MAPPINGS = {}
 NODE_DISPLAY_NAME_MAPPINGS = {}
@@ -35,8 +36,8 @@ for file in files:
     if not file.endswith(".py"):
         continue
     name = os.path.splitext(file)[0]
-    imported_module = importlib.import_module(".py.{}".format(name), __name__)
     try:
+        imported_module = importlib.import_module(".py.{}".format(name), __name__)
         NODE_CLASS_MAPPINGS = {**NODE_CLASS_MAPPINGS, **imported_module.NODE_CLASS_MAPPINGS}
         NODE_DISPLAY_NAME_MAPPINGS = {**NODE_DISPLAY_NAME_MAPPINGS, **imported_module.NODE_DISPLAY_NAME_MAPPINGS}
         serialized_CLASS_MAPPINGS = {k: serialize(v) for k, v in imported_module.NODE_CLASS_MAPPINGS.items()}
@@ -46,7 +47,10 @@ for file in files:
             "NODE_DISPLAY_NAME_MAPPINGS": serialized_DISPLAY_NAME_MAPPINGS
         }
     except Exception as e:
-        print(f"Error loading {file}: {str(e)}")
+        print(f"[ComfyUI-YCNodes_Toolkit] ❌ Failed to load node: {file}")
+        print(f"[ComfyUI-YCNodes_Toolkit] Error: {str(e)}")
+        print(f"[ComfyUI-YCNodes_Toolkit] This node will be skipped, other nodes will continue to load normally.")
+        traceback.print_exc()
 
 # 定义web目录（如果需要前端资源）
 WEB_DIRECTORY = "./js"
