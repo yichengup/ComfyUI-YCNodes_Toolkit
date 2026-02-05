@@ -1,3 +1,5 @@
+import { imageCache } from "./Loadimage_brushmask.cache.js";
+
 export const WIDGET_NAMES = {
     BRUSH_DATA: "brush_data",
     BRUSH_SIZE: "brush_size",
@@ -190,12 +192,28 @@ export function initUIBindings(node, state) {
             }
         }
 
+        // 恢复图片：优先级 widget > properties > 全局缓存
         const imageBase64Widget = this.widgets.find(w => w.name === WIDGET_NAMES.IMAGE_BASE64);
-        if (imageBase64Widget && imageBase64Widget.value) {
-            this.properties.imageBase64Data = imageBase64Widget.value;
-            this.loadBackgroundImageFromBase64(imageBase64Widget.value);
-        } else if (this.properties.imageBase64Data) {
-            this.loadBackgroundImageFromBase64(this.properties.imageBase64Data);
+        let imageToLoad = null;
+        
+        if (imageBase64Widget && imageBase64Widget.value && imageBase64Widget.value.trim()) {
+            // 1. 从 widget 恢复（工作流自带图片的情况）
+            imageToLoad = imageBase64Widget.value;
+        } else if (this.properties.imageBase64Data && this.properties.imageBase64Data.trim()) {
+            // 2. 从 properties 恢复
+            imageToLoad = this.properties.imageBase64Data;
+        } else if (imageCache.has(this.id)) {
+            // 3. 从全局缓存恢复（切换tab后的情况）
+            imageToLoad = imageCache.get(this.id);
+        }
+        
+        if (imageToLoad) {
+            this.properties.imageBase64Data = imageToLoad;
+            this.loadBackgroundImageFromBase64(imageToLoad);
+            // 同步到 widget（保持一致性）
+            if (imageBase64Widget) {
+                imageBase64Widget.value = imageToLoad;
+            }
         }
 
         this.properties.brushPaths = [];
