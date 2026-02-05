@@ -2,6 +2,7 @@
 import { app } from "../../scripts/app.js";
 import { initUIBindings } from "./Loadimage_brushmask.ui.js";
 import { initInteractionBindings } from "./Loadimage_brushmask.interactions.js";
+import { imageCache } from "./Loadimage_brushmask.cache.js";
 
 const DEFAULT_LAYOUT = {
     shiftLeft: 10,
@@ -63,15 +64,43 @@ app.registerExtension({
             return;
         }
 
-            const onNodeCreated = nodeType.prototype.onNodeCreated;
-            nodeType.prototype.onNodeCreated = function () {
+        const onNodeCreated = nodeType.prototype.onNodeCreated;
+        nodeType.prototype.onNodeCreated = function () {
             if (onNodeCreated) {
                 onNodeCreated.apply(this, []);
             }
-                this.ycimagebrushmask = new ycimagebrushmask(this);
-                if (this.initButtons) {
-                    this.initButtons();
+            this.ycimagebrushmask = new ycimagebrushmask(this);
+            if (this.initButtons) {
+                this.initButtons();
+            }
+        };
+
+        // 导出工作流时不保存图片base64数据，减小文件体积
+        // 切换tab时从全局缓存恢复图片
+        const onSerialize = nodeType.prototype.onSerialize;
+        nodeType.prototype.onSerialize = function (o) {
+            if (onSerialize) {
+                onSerialize.apply(this, [o]);
+            }
+            
+            // 序列化前：将当前图片保存到全局缓存（用于切换tab后恢复）
+            const currentBase64 = this.properties?.imageBase64Data;
+            if (currentBase64 && currentBase64.trim()) {
+                imageCache.set(this.id, currentBase64);
+            }
+            
+            // 在序列化的 widgets_values 中清空 image_base64
+            if (o.widgets_values && Array.isArray(o.widgets_values)) {
+                const imageBase64Index = this.widgets?.findIndex(w => w.name === "image_base64");
+                if (imageBase64Index !== -1 && imageBase64Index < o.widgets_values.length) {
+                    o.widgets_values[imageBase64Index] = "";
                 }
+            }
+            
+            // 清理序列化对象中的 imageBase64Data（减小工作流文件体积）
+            if (o.properties && o.properties.imageBase64Data) {
+                o.properties.imageBase64Data = "";
+            }
         };
     }
 });
