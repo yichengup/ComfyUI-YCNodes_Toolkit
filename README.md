@@ -32,3 +32,7 @@ Bilibili：[我的B站主页](https://space.bilibili.com/498399023?spm_id_from=3
 QQ号：3260561522
 wechat微信: DLONG189one
 
+## 如果您从本项目中受益，可以请作者喝杯咖啡
+<img width="1536" height="841" alt="image" src="https://github.com/user-attachments/assets/5c3193f3-8ad8-41ad-8f97-8d3c66840058" />
+
+
