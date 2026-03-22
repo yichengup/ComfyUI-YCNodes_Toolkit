@@ -1,3 +1,5 @@
+# author_yicheng 亦诚
 numpy>=1.23
 Pillow>=9.0
+
 
