@@ -22,7 +22,8 @@ const ASPECT_RATIOS = {
     "9:16": { label: "9:16", ratio: 9/16 },
     "21:9": { label: "21:9", ratio: 21/9 },
     "2:1": { label: "2:1", ratio: 2 },
-    "1:2": { label: "1:2", ratio: 0.5 }
+    "1:2": { label: "1:2", ratio: 0.5 },
+    "custom": { label: "Custom", ratio: null }
 };
 
 class ycImageCrop {
@@ -48,6 +49,8 @@ class ycImageCrop {
             cropWidth: 512,
             cropHeight: 512,
             aspectRatio: "free",
+            customRatioWidth: 1,
+            customRatioHeight: 1,
             fillColor: "#000000",
             isDragging: false,
             dragHandle: null, // null, 'move', 'nw', 'ne', 'sw', 'se', 'n', 's', 'e', 'w'
@@ -95,89 +98,93 @@ class ycImageCrop {
     }
 
     initButtons(node) {
-        const buttonY = 8;
-        const buttonHeight = 21;
-        let buttonX = 10;
+            const buttonY = 10;  // 向下移动2px
+            const buttonHeight = 21;
+            let buttonX = 10;
 
-        // 第一行：功能按钮 + 部分比例按钮
-        node.properties.buttons = [
-            {
-                text: "Load Image",
-                x: buttonX,
-                y: buttonY,
-                width: 80,
-                height: buttonHeight,
-                action: () => this.loadImageFromFile(node)
-            },
-            {
-                text: "Reset",
-                x: (buttonX += 85),
-                y: buttonY,
-                width: 50,
-                height: buttonHeight,
-                action: () => this.resetCrop(node)
-            },
-            {
-                text: "Color",
-                x: (buttonX += 55),
-                y: buttonY,
-                width: 50,
-                height: buttonHeight,
-                action: () => this.pickFillColor(node),
-                isColorButton: true
+            // 第一行：功能按钮 + Free + Custom
+            node.properties.buttons = [
+                {
+                    text: "Load Image",
+                    x: buttonX,
+                    y: buttonY,
+                    width: 80,
+                    height: buttonHeight,
+                    action: () => this.loadImageFromFile(node)
+                },
+                {
+                    text: "Reset",
+                    x: (buttonX += 85),
+                    y: buttonY,
+                    width: 50,
+                    height: buttonHeight,
+                    action: () => this.resetCrop(node)
+                },
+                {
+                    text: "Color",
+                    x: (buttonX += 55),
+                    y: buttonY,
+                    width: 50,
+                    height: buttonHeight,
+                    action: () => this.pickFillColor(node),
+                    isColorButton: true
+                }
+            ];
+
+            // 确保输出端口正确设置
+            if (node.outputs && node.outputs.length >= 4) {
+                node.outputs[0].name = "image";
+                node.outputs[0].type = "IMAGE";
+                node.outputs[1].name = "mask";
+                node.outputs[1].type = "MASK";
+                node.outputs[2].name = "width";
+                node.outputs[2].type = "INT";
+                node.outputs[3].name = "height";
+                node.outputs[3].type = "INT";
             }
-        ];
 
-        // 确保输出端口正确设置
-        if (node.outputs && node.outputs.length >= 4) {
-            node.outputs[0].name = "image";
-            node.outputs[0].type = "IMAGE";
-            node.outputs[1].name = "mask";
-            node.outputs[1].type = "MASK";
-            node.outputs[2].name = "width";
-            node.outputs[2].type = "INT";
-            node.outputs[3].name = "height";
-            node.outputs[3].type = "INT";
+            // 第一行比例按钮（接在功能按钮后面）：Free + Custom
+            buttonX += 55;
+            const ratioButtonWidth = 30;  // 缩小按钮宽度到30px
+            const customButtonWidth = 50;  // Custom按钮需要更宽
+            const ratioButtonHeight = 18;
+
+            const ratioKeys1 = ["free", "custom"];
+            for (const key of ratioKeys1) {
+                const btnWidth = key === "custom" ? customButtonWidth : ratioButtonWidth;
+                node.properties.buttons.push({
+                    text: ASPECT_RATIOS[key].label,
+                    x: buttonX,
+                    y: buttonY + 2,
+                    width: btnWidth,
+                    height: ratioButtonHeight,
+                    isRatio: true,
+                    ratioKey: key,
+                    action: () => key === "custom" ? this.setCustomRatio(node) : this.setAspectRatio(node, key)
+                });
+                buttonX += btnWidth + 5;
+            }
+
+            // 第二行：所有预设比例按钮（包括1:1）
+            const ratioY2 = buttonY + buttonHeight + 5;
+            let ratioX2 = 10;
+            const ratioKeys2 = ["1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9"];
+            for (const key of ratioKeys2) {
+                node.properties.buttons.push({
+                    text: ASPECT_RATIOS[key].label,
+                    x: ratioX2,
+                    y: ratioY2,
+                    width: ratioButtonWidth,
+                    height: ratioButtonHeight,
+                    isRatio: true,
+                    ratioKey: key,
+                    action: () => this.setAspectRatio(node, key)
+                });
+                ratioX2 += ratioButtonWidth + 5;
+            }
         }
 
-        // 第一行比例按钮（接在功能按钮后面）
-        buttonX += 55;
-        const ratioButtonWidth = 40;
-        const ratioButtonHeight = 18;
-        
-        const ratioKeys1 = ["free", "1:1"];
-        for (const key of ratioKeys1) {
-            node.properties.buttons.push({
-                text: ASPECT_RATIOS[key].label,
-                x: buttonX,
-                y: buttonY + 2,
-                width: ratioButtonWidth,
-                height: ratioButtonHeight,
-                isRatio: true,
-                ratioKey: key,
-                action: () => this.setAspectRatio(node, key)
-            });
-            buttonX += ratioButtonWidth + 5;
-        }
 
-        // 第二行：所有比例按钮
-        const ratioY2 = buttonY + buttonHeight + 5;
-        let ratioX2 = 10;
-        const ratioKeys2 = ["2:3", "3:2", "3:4", "4:3", "9:16", "16:9"];
-        for (const key of ratioKeys2) {
-            node.properties.buttons.push({
-                text: ASPECT_RATIOS[key].label,
-                x: ratioX2,
-                y: ratioY2,
-                width: ratioButtonWidth,
-                height: ratioButtonHeight,
-                isRatio: true,
-                ratioKey: key,
-                action: () => this.setAspectRatio(node, key)
-            });
-            ratioX2 += ratioButtonWidth + 5;
-        }
-    }
 
     initInteractions(node) {
         const { shiftLeft, shiftRight, panelHeight } = this.state.layout;
@@ -711,7 +718,16 @@ class ycImageCrop {
             ctx.font = button.isRatio ? "10px Arial" : "11px Arial";
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            ctx.fillText(button.text, button.x + button.width / 2, button.y + button.height / 2);
+            
+            // Custom按钮显示当前自定义比例
+            let displayText = button.text;
+            if (button.ratioKey === "custom" && node.properties.aspectRatio === "custom") {
+                const w = node.properties.customRatioWidth || 1;
+                const h = node.properties.customRatioHeight || 1;
+                displayText = `${w}:${h}`;
+            }
+            
+            ctx.fillText(displayText, button.x + button.width / 2, button.y + button.height / 2);
         }
     }
 
@@ -767,7 +783,11 @@ class ycImageCrop {
         let newW = node.properties.dragStartCropWidth;
         let newH = node.properties.dragStartCropHeight;
 
-        const ratio = ASPECT_RATIOS[node.properties.aspectRatio]?.ratio;
+        // 获取比例（支持自定义比例）
+        let ratio = ASPECT_RATIOS[node.properties.aspectRatio]?.ratio;
+        if (node.properties.aspectRatio === "custom" && node.properties.customRatioWidth && node.properties.customRatioHeight) {
+            ratio = node.properties.customRatioWidth / node.properties.customRatioHeight;
+        }
 
         if (handle === 'move') {
             newX = node.properties.dragStartCropX + dx;
@@ -900,6 +920,143 @@ class ycImageCrop {
         if (app.graph) {
             app.graph.setDirtyCanvas(true, true);
         }
+    }
+
+    setCustomRatio(node) {
+        // 创建自定义弹窗
+        const dialog = document.createElement('div');
+        dialog.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #2a2a2a;
+            border: 1px solid #555;
+            border-radius: 6px;
+            padding: 12px 14px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            z-index: 10000;
+            width: auto;
+        `;
+
+        const currentW = node.properties.customRatioWidth || 1;
+        const currentH = node.properties.customRatioHeight || 1;
+
+        dialog.innerHTML = `
+            <div style="color: #ddd; font-size: 13px; margin-bottom: 10px; font-weight: bold;">
+                Custom Aspect Ratio
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
+                <div>
+                    <label style="color: #aaa; font-size: 10px; display: block; margin-bottom: 3px;">Width</label>
+                    <input type="number" id="customRatioWidth" value="${currentW}" min="0.1" step="0.1"
+                        style="width: 100px; padding: 5px; background: #1a1a1a; border: 1px solid #555; 
+                        border-radius: 3px; color: #ddd; font-size: 13px; box-sizing: border-box;">
+                </div>
+                <div style="color: #888; font-size: 16px; margin-top: 14px;">:</div>
+                <div>
+                    <label style="color: #aaa; font-size: 10px; display: block; margin-bottom: 3px;">Height</label>
+                    <input type="number" id="customRatioHeight" value="${currentH}" min="0.1" step="0.1"
+                        style="width: 100px; padding: 5px; background: #1a1a1a; border: 1px solid #555; 
+                        border-radius: 3px; color: #ddd; font-size: 13px; box-sizing: border-box;">
+                </div>
+            </div>
+            <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                <button id="customRatioCancel" 
+                    style="padding: 5px 12px; background: #444; border: none; border-radius: 3px; 
+                    color: #ddd; cursor: pointer; font-size: 12px;">
+                    Cancel
+                </button>
+                <button id="customRatioOk" 
+                    style="padding: 5px 12px; background: #4a90e2; border: none; border-radius: 3px; 
+                    color: white; cursor: pointer; font-size: 12px;">
+                    OK
+                </button>
+            </div>
+        `;
+
+        // 添加遮罩层
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.6);
+            z-index: 9999;
+        `;
+
+        document.body.appendChild(overlay);
+        document.body.appendChild(dialog);
+
+        // 获取输入框
+        const widthInput = dialog.querySelector('#customRatioWidth');
+        const heightInput = dialog.querySelector('#customRatioHeight');
+        const okBtn = dialog.querySelector('#customRatioOk');
+        const cancelBtn = dialog.querySelector('#customRatioCancel');
+
+        // 聚焦到第一个输入框
+        setTimeout(() => widthInput.focus(), 100);
+
+        // 关闭弹窗函数
+        const closeDialog = () => {
+            document.body.removeChild(dialog);
+            document.body.removeChild(overlay);
+        };
+
+        // 应用比例函数
+        const applyRatio = () => {
+            const w = parseFloat(widthInput.value);
+            const h = parseFloat(heightInput.value);
+
+            if (isNaN(w) || isNaN(h) || w <= 0 || h <= 0) {
+                widthInput.style.borderColor = '#e74c3c';
+                heightInput.style.borderColor = '#e74c3c';
+                return;
+            }
+
+            // 保存自定义比例
+            node.properties.customRatioWidth = w;
+            node.properties.customRatioHeight = h;
+            node.properties.aspectRatio = "custom";
+
+            // 应用自定义比例
+            const ratio = w / h;
+            const centerX = node.properties.cropX + node.properties.cropWidth / 2;
+            const centerY = node.properties.cropY + node.properties.cropHeight / 2;
+
+            const newHeight = Math.round(node.properties.cropWidth / ratio);
+            node.properties.cropHeight = newHeight;
+            node.properties.cropY = Math.round(centerY - newHeight / 2);
+
+            this.syncWidgets(node);
+            if (app.graph) {
+                app.graph.setDirtyCanvas(true, true);
+            }
+
+            closeDialog();
+        };
+
+        // 事件监听
+        okBtn.onclick = applyRatio;
+        cancelBtn.onclick = closeDialog;
+        overlay.onclick = closeDialog;
+
+        // 回车键确认
+        widthInput.onkeydown = heightInput.onkeydown = (e) => {
+            if (e.key === 'Enter') {
+                applyRatio();
+            } else if (e.key === 'Escape') {
+                closeDialog();
+            }
+        };
+
+        // 输入时清除错误样式
+        widthInput.oninput = heightInput.oninput = () => {
+            widthInput.style.borderColor = '#555';
+            heightInput.style.borderColor = '#555';
+        };
     }
 
     pickFillColor(node) {
