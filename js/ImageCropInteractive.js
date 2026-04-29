@@ -356,6 +356,10 @@ class ycImageCropInteractive {
             if (this._isDragging) {
                 this._isDragging = false;
                 this._dragHandle = null;
+                node.properties.cropX = Math.round(node.properties.cropX);
+                node.properties.cropY = Math.round(node.properties.cropY);
+                node.properties.cropWidth = Math.round(node.properties.cropWidth);
+                node.properties.cropHeight = Math.round(node.properties.cropHeight);
                 graphCanvas.canvas.style.cursor = "default";
                 return true;
             }
@@ -366,6 +370,10 @@ class ycImageCropInteractive {
             if (this._isDragging) {
                 this._isDragging = false;
                 this._dragHandle = null;
+                node.properties.cropX = Math.round(node.properties.cropX);
+                node.properties.cropY = Math.round(node.properties.cropY);
+                node.properties.cropWidth = Math.round(node.properties.cropWidth);
+                node.properties.cropHeight = Math.round(node.properties.cropHeight);
                 graphCanvas.canvas.style.cursor = "default";
                 return true;
             }
@@ -459,6 +467,10 @@ class ycImageCropInteractive {
             if (this._isDragging) {
                 this._isDragging = false;
                 this._dragHandle = null;
+                node.properties.cropX = Math.round(node.properties.cropX);
+                node.properties.cropY = Math.round(node.properties.cropY);
+                node.properties.cropWidth = Math.round(node.properties.cropWidth);
+                node.properties.cropHeight = Math.round(node.properties.cropHeight);
                 if (canvas.canvas) {
                     canvas.canvas.style.cursor = "default";
                 }
@@ -560,7 +572,7 @@ class ycImageCropInteractive {
             ctx.textAlign = "center";
             const extendInfo = (m.displayMinX < 0 || m.displayMinY < 0 || m.displayMaxX > node.properties.sourceWidth || m.displayMaxY > node.properties.sourceHeight) 
                 ? " (Extended)" : "";
-            let statusLine = `Source: ${node.properties.sourceWidth}×${node.properties.sourceHeight} | Crop: ${node.properties.cropWidth}×${node.properties.cropHeight}${extendInfo}`;
+            let statusLine = `Source: ${node.properties.sourceWidth}×${node.properties.sourceHeight} | Crop: ${Math.round(node.properties.cropWidth)}×${Math.round(node.properties.cropHeight)}${extendInfo}`;
             ctx.fillText(statusLine, node.size[0] / 2, m.offsetY + m.scaledDisplayHeight + 15);
 
             // 显示复用/Re-edit 状态提示
@@ -817,10 +829,10 @@ class ycImageCropInteractive {
         if (newW < 10) newW = 10;
         if (newH < 10) newH = 10;
 
-        node.properties.cropX = Math.round(newX);
-        node.properties.cropY = Math.round(newY);
-        node.properties.cropWidth = Math.round(newW);
-        node.properties.cropHeight = Math.round(newH);
+        node.properties.cropX = newX;
+        node.properties.cropY = newY;
+        node.properties.cropWidth = newW;
+        node.properties.cropHeight = newH;
     }
 
     // ── 操作方法 ─────────────────────────────────────────────────
