@@ -1,4 +1,4 @@
-// author.yichengup.ImageCrop 2025.01.XX
+// author.yichengup.ImageCrop 2026.04.XX
 import { app } from "../../scripts/app.js";
 
 // 全局图片缓存（避免工作流保存时包含图片）
@@ -308,6 +308,10 @@ class ycImageCrop {
             if (node.properties.isDragging) {
                 node.properties.isDragging = false;
                 node.properties.dragHandle = null;
+                node.properties.cropX = Math.round(node.properties.cropX);
+                node.properties.cropY = Math.round(node.properties.cropY);
+                node.properties.cropWidth = Math.round(node.properties.cropWidth);
+                node.properties.cropHeight = Math.round(node.properties.cropHeight);
                 graphCanvas.canvas.style.cursor = "default";
                 return true;
             }
@@ -316,10 +320,13 @@ class ycImageCrop {
 
         // 添加双击事件处理
         node.onDblClick = (e, localPos, graphCanvas) => {
-            // 双击强制停止拖拽
             if (node.properties.isDragging) {
                 node.properties.isDragging = false;
                 node.properties.dragHandle = null;
+                node.properties.cropX = Math.round(node.properties.cropX);
+                node.properties.cropY = Math.round(node.properties.cropY);
+                node.properties.cropWidth = Math.round(node.properties.cropWidth);
+                node.properties.cropHeight = Math.round(node.properties.cropHeight);
                 graphCanvas.canvas.style.cursor = "default";
                 return true;
             }
@@ -333,6 +340,10 @@ class ycImageCrop {
                 if (node.properties.isDragging) {
                     node.properties.isDragging = false;
                     node.properties.dragHandle = null;
+                    node.properties.cropX = Math.round(node.properties.cropX);
+                    node.properties.cropY = Math.round(node.properties.cropY);
+                    node.properties.cropWidth = Math.round(node.properties.cropWidth);
+                    node.properties.cropHeight = Math.round(node.properties.cropHeight);
                     if (canvas.canvas) {
                         canvas.canvas.style.cursor = "default";
                     }
@@ -581,7 +592,7 @@ class ycImageCrop {
             const extendInfo = (displayMinX < 0 || displayMinY < 0 || displayMaxX > node.properties.sourceWidth || displayMaxY > node.properties.sourceHeight) 
                 ? " (Extended)" : "";
             ctx.fillText(
-                `Source: ${node.properties.sourceWidth}×${node.properties.sourceHeight} | Crop: ${node.properties.cropWidth}×${node.properties.cropHeight}${extendInfo}`,
+                `Source: ${node.properties.sourceWidth}×${node.properties.sourceHeight} | Crop: ${Math.round(node.properties.cropWidth)}×${Math.round(node.properties.cropHeight)}${extendInfo}`,
                 node.size[0] / 2,
                 offsetY + scaledDisplayHeight + 15
             );
@@ -842,10 +853,10 @@ class ycImageCrop {
         if (newW < 10) newW = 10;
         if (newH < 10) newH = 10;
 
-        node.properties.cropX = Math.round(newX);
-        node.properties.cropY = Math.round(newY);
-        node.properties.cropWidth = Math.round(newW);
-        node.properties.cropHeight = Math.round(newH);
+        node.properties.cropX = newX;
+        node.properties.cropY = newY;
+        node.properties.cropWidth = newW;
+        node.properties.cropHeight = newH;
     }
 
     loadImageFromFile(node) {
@@ -1245,4 +1256,4 @@ app.registerExtension({
     }
 });
 
-// author.yichengup.ImageCrop 2025.01.XX
+// author.yichengup.ImageCrop 2026.04.XX
