@@ -50,6 +50,10 @@ def _parse_fill_color(fill_color):
 
 def _do_crop(source_img_tensor, source_width, source_height, crop_x, crop_y, crop_width, crop_height, fill_rgb):
     """执行裁剪逻辑，返回 (result_img, mask)，均已含 batch 维度"""
+    crop_width = max(1, int(crop_width))
+    crop_height = max(1, int(crop_height))
+    crop_x = int(crop_x)
+    crop_y = int(crop_y)
     result_img = torch.zeros((crop_height, crop_width, 3), dtype=torch.float32)
     result_img[:, :, 0] = fill_rgb[0] / 255.0
     result_img[:, :, 1] = fill_rgb[1] / 255.0
@@ -129,6 +133,23 @@ def _get_reuse_params(node_id, source_width, source_height):
     return _scale_crop_params(saved, source_width, source_height)
 
 
+def _build_crop_params_dict(crop_x, crop_y, crop_width, crop_height, fill_color, source_width, source_height):
+    """构造完整的裁剪参数字典"""
+    return {
+        "crop_x": crop_x,
+        "crop_y": crop_y,
+        "crop_width": crop_width,
+        "crop_height": crop_height,
+        "fill_color": fill_color,
+        "source_width": source_width,
+        "source_height": source_height,
+        "extension_top": max(0, -crop_y),
+        "extension_bottom": max(0, crop_y + crop_height - source_height),
+        "extension_left": max(0, -crop_x),
+        "extension_right": max(0, crop_x + crop_width - source_width)
+    }
+
+
 class ycImageCropInteractive:
     """
     交互式图像裁剪扩展节点
@@ -147,8 +168,8 @@ class ycImageCropInteractive:
             }
         }
     
-    RETURN_TYPES = ("IMAGE", "MASK", "INT", "INT")
-    RETURN_NAMES = ("image", "mask", "width", "height")
+    RETURN_TYPES = ("IMAGE", "MASK", "DICT", "BOOLEAN")
+    RETURN_NAMES = ("image", "mask", "c_param", "out")
     FUNCTION = "interactive_crop"
     CATEGORY = 'YCNode/utils'
 
@@ -192,7 +213,12 @@ class ycImageCropInteractive:
                         "crop_height": params["crop_height"],
                     })
 
-                    return (result_img, mask, rw, rh)
+                    crop_params = _build_crop_params_dict(
+                        params["crop_x"], params["crop_y"],
+                        params["crop_width"], params["crop_height"],
+                        params["fill_color"], source_width, source_height
+                    )
+                    return (result_img, mask, crop_params, True)
 
             # ── 进入交互模式 ──
             event = Event()
@@ -277,7 +303,11 @@ class ycImageCropInteractive:
                 if cancelled or not confirmed:
                     print(f"[YC交互式裁剪] 用户取消操作，返回原图")
                     empty_mask = torch.zeros((1, source_height, source_width), dtype=torch.float32)
-                    return (image, empty_mask, source_width, source_height)
+                    crop_params = _build_crop_params_dict(
+                        0, 0, source_width, source_height,
+                        "#000000", source_width, source_height
+                    )
+                    return (image, empty_mask, crop_params, True)
                 
                 result_image = node_info.get("result_image")
                 result_mask = node_info.get("result_mask")
@@ -286,11 +316,27 @@ class ycImageCropInteractive:
                 
                 if result_image is not None and result_mask is not None:
                     print(f"[YC交互式裁剪] 返回裁剪结果: {result_width}x{result_height}")
-                    return (result_image, result_mask, result_width, result_height)
+                    saved_params = _saved_crop_params.get(node_id)
+                    if saved_params:
+                        crop_params = _build_crop_params_dict(
+                            saved_params["crop_x"], saved_params["crop_y"],
+                            saved_params["crop_width"], saved_params["crop_height"],
+                            saved_params["fill_color"], source_width, source_height
+                        )
+                    else:
+                        crop_params = _build_crop_params_dict(
+                            0, 0, result_width, result_height,
+                            "#000000", source_width, source_height
+                        )
+                    return (result_image, result_mask, crop_params, True)
                 else:
                     print(f"[YC交互式裁剪] 结果数据异常，返回原图")
                     empty_mask = torch.zeros((1, source_height, source_width), dtype=torch.float32)
-                    return (image, empty_mask, source_width, source_height)
+                    crop_params = _build_crop_params_dict(
+                        0, 0, source_width, source_height,
+                        "#000000", source_width, source_height
+                    )
+                    return (image, empty_mask, crop_params, True)
                 
             except Exception as e:
                 print(f"[YC交互式裁剪] 处理过程中出错: {str(e)}")
@@ -298,14 +344,21 @@ class ycImageCropInteractive:
                 if node_id in image_crop_interactive_data:
                     del image_crop_interactive_data[node_id]
                 empty_mask = torch.zeros((1, source_height, source_width), dtype=torch.float32)
-                return (image, empty_mask, source_width, source_height)
+                crop_params = _build_crop_params_dict(
+                    0, 0, source_width, source_height,
+                    "#000000", source_width, source_height
+                )
+                return (image, empty_mask, crop_params, True)
                 
         except Exception as e:
             print(f"[YC交互式裁剪] 节点执行出错: {str(e)}")
             traceback.print_exc()
             h, w = image.shape[1], image.shape[2]
             empty_mask = torch.zeros((1, h, w), dtype=torch.float32)
-            return (image, empty_mask, w, h)
+            crop_params = _build_crop_params_dict(
+                0, 0, w, h, "#000000", w, h
+            )
+            return (image, empty_mask, crop_params)
 
 
 @PromptServer.instance.routes.post("/yc_image_crop_interactive/heartbeat")
@@ -330,10 +383,10 @@ async def confirm_crop(request):
     try:
         data = await request.json()
         node_id = data.get("node_id")
-        crop_x = data.get("crop_x", 0)
-        crop_y = data.get("crop_y", 0)
-        crop_width = data.get("crop_width", 512)
-        crop_height = data.get("crop_height", 512)
+        crop_x = int(data.get("crop_x", 0))
+        crop_y = int(data.get("crop_y", 0))
+        crop_width = int(data.get("crop_width", 512))
+        crop_height = int(data.get("crop_height", 512))
         fill_color = data.get("fill_color", "#000000")
         
         if node_id not in image_crop_interactive_data:
