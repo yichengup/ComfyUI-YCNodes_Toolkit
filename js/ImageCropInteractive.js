@@ -38,6 +38,16 @@ class ycImageCropInteractive {
         this._dragStartCropY = 0;
         this._dragStartCropWidth = 0;
         this._dragStartCropHeight = 0;
+        // 拖拽期间冻结的显示坐标系快照（关键：避免边拖边算导致的自反馈飘移）
+        this._dragStartScale = 1;
+        this._dragStartOffsetX = 0;
+        this._dragStartOffsetY = 0;
+        this._dragStartDisplayMinX = 0;
+        this._dragStartDisplayMinY = 0;
+        this._dragStartDisplayMaxX = 0;
+        this._dragStartDisplayMaxY = 0;
+        this._dragStartScaledWidth = 0;
+        this._dragStartScaledHeight = 0;
         this._heartbeatTimer = null;
         this._globalMouseUpHandler = null;
         this._lastReuseInfo = "";
@@ -102,6 +112,27 @@ class ycImageCropInteractive {
     }
 
     _getCanvasMetrics(node) {
+        // 拖拽中：直接返回 onMouseDown 时冻结的快照，整个拖拽期间 scale/offset 完全不变，
+        // 防止「裁剪框扩张 → 显示区扩张 → scale 变小 → imgX 漂移」的自反馈循环。
+        if (this._isDragging) {
+            const displayMinX = this._dragStartDisplayMinX;
+            const displayMinY = this._dragStartDisplayMinY;
+            const displayMaxX = this._dragStartDisplayMaxX;
+            const displayMaxY = this._dragStartDisplayMaxY;
+            return {
+                displayMinX, displayMinY, displayMaxX, displayMaxY,
+                displayWidth: displayMaxX - displayMinX,
+                displayHeight: displayMaxY - displayMinY,
+                scale: this._dragStartScale,
+                offsetX: this._dragStartOffsetX,
+                offsetY: this._dragStartOffsetY,
+                scaledDisplayWidth: this._dragStartScaledWidth,
+                scaledDisplayHeight: this._dragStartScaledHeight,
+                frozen: true
+            };
+        }
+
+        // 非拖拽：动态计算（保持原有视图自适应）
         const { shiftLeft, shiftRight, panelHeight } = this.state.layout;
         const bounds = this._getDisplayBounds(node);
 
@@ -116,7 +147,7 @@ class ycImageCropInteractive {
         const offsetX = shiftLeft + (canvasAreaWidth - scaledDisplayWidth) / 2;
         const offsetY = shiftLeft + panelHeight + (canvasAreaHeight - scaledDisplayHeight) / 2;
 
-        return { ...bounds, scale, scaledDisplayWidth, scaledDisplayHeight, offsetX, offsetY };
+        return { ...bounds, scale, scaledDisplayWidth, scaledDisplayHeight, offsetX, offsetY, frozen: false };
     }
 
     _localPosToImgCoords(node, localX, localY) {
@@ -317,10 +348,24 @@ class ycImageCropInteractive {
                 }
             }
 
+            // 此时 _isDragging 还是 false，metrics 是动态算的当前坐标系
             const { imgX, imgY, metrics } = this._localPosToImgCoords(node, localPos[0], localPos[1]);
 
             const handle = this.getHandleAtPoint(node, imgX, imgY, metrics.scale);
             if (handle) {
+                // 关键修复：先冻结当前坐标系到实例字段（顺序很重要，必须在 _isDragging=true 之前），
+                // 一旦下面 _isDragging=true，后续所有 _getCanvasMetrics 调用都会走「冻结」分支，
+                // 鼠标→图片坐标的反算和绘制全部基于这套不变的 scale/offset。
+                this._dragStartScale = metrics.scale;
+                this._dragStartOffsetX = metrics.offsetX;
+                this._dragStartOffsetY = metrics.offsetY;
+                this._dragStartDisplayMinX = metrics.displayMinX;
+                this._dragStartDisplayMinY = metrics.displayMinY;
+                this._dragStartDisplayMaxX = metrics.displayMaxX;
+                this._dragStartDisplayMaxY = metrics.displayMaxY;
+                this._dragStartScaledWidth = metrics.scaledDisplayWidth;
+                this._dragStartScaledHeight = metrics.scaledDisplayHeight;
+
                 this._isDragging = true;
                 this._dragHandle = handle;
                 this._dragStartX = imgX;
@@ -566,13 +611,16 @@ class ycImageCropInteractive {
 
             this.drawButtons(ctx, node);
 
-            // 信息文本
+            // 信息文本（"Extended" 用实际裁剪框判断，不受冻结视图影响）
             ctx.fillStyle = LiteGraph.NODE_TEXT_COLOR;
             ctx.font = `${fontsize}px Arial`;
             ctx.textAlign = "center";
-            const extendInfo = (m.displayMinX < 0 || m.displayMinY < 0 || m.displayMaxX > node.properties.sourceWidth || m.displayMaxY > node.properties.sourceHeight) 
+            const p = node.properties;
+            const extendInfo = (p.cropX < 0 || p.cropY < 0
+                || p.cropX + p.cropWidth > p.sourceWidth
+                || p.cropY + p.cropHeight > p.sourceHeight)
                 ? " (Extended)" : "";
-            let statusLine = `Source: ${node.properties.sourceWidth}×${node.properties.sourceHeight} | Crop: ${Math.round(node.properties.cropWidth)}×${Math.round(node.properties.cropHeight)}${extendInfo}`;
+            let statusLine = `Source: ${p.sourceWidth}×${p.sourceHeight} | Crop: ${Math.round(p.cropWidth)}×${Math.round(p.cropHeight)}${extendInfo}`;
             ctx.fillText(statusLine, node.size[0] / 2, m.offsetY + m.scaledDisplayHeight + 15);
 
             // 显示复用/Re-edit 状态提示
