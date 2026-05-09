@@ -1,4 +1,4 @@
-// author.yichengup.ImageCrop 2026.04.XX
+// author.yichengup.ImageCrop 2026.05.XX
 import { app } from "../../scripts/app.js";
 
 // 全局图片缓存（避免工作流保存时包含图片）
@@ -60,6 +60,14 @@ class ycImageCrop {
             dragStartCropY: 0,
             dragStartCropWidth: 0,
             dragStartCropHeight: 0,
+            // 拖拽期间冻结的显示坐标系快照（关键：避免边拖边算导致的自反馈飘移）
+            dragStartScale: 1,
+            dragStartOffsetX: 0,
+            dragStartOffsetY: 0,
+            dragStartDisplayMinX: 0,
+            dragStartDisplayMinY: 0,
+            dragStartScaledWidth: 0,
+            dragStartScaledHeight: 0,
             buttons: []
         };
 
@@ -184,7 +192,47 @@ class ycImageCrop {
             }
         }
 
+    // 计算/获取当前显示坐标系。
+    // - 拖拽中：直接返回 onMouseDown 时冻结的快照，保证拖拽期间 scale/offset 完全不变；
+    // - 非拖拽：按裁剪框 + 原图边界动态计算，保持原有自动适配视图行为。
+    _getDisplayMetrics(node) {
+        if (node.properties.isDragging) {
+            return {
+                displayMinX: node.properties.dragStartDisplayMinX,
+                displayMinY: node.properties.dragStartDisplayMinY,
+                scale: node.properties.dragStartScale,
+                offsetX: node.properties.dragStartOffsetX,
+                offsetY: node.properties.dragStartOffsetY,
+                scaledDisplayWidth: node.properties.dragStartScaledWidth,
+                scaledDisplayHeight: node.properties.dragStartScaledHeight,
+                frozen: true
+            };
+        }
 
+        const { shiftLeft, shiftRight, panelHeight } = this.state.layout;
+        const p = node.properties;
+        const displayMinX = Math.min(0, p.cropX);
+        const displayMinY = Math.min(0, p.cropY);
+        const displayMaxX = Math.max(p.sourceWidth, p.cropX + p.cropWidth);
+        const displayMaxY = Math.max(p.sourceHeight, p.cropY + p.cropHeight);
+        const displayWidth = displayMaxX - displayMinX;
+        const displayHeight = displayMaxY - displayMinY;
+
+        const canvasAreaWidth = node.size[0] - shiftRight - shiftLeft;
+        const canvasAreaHeight = node.size[1] - shiftLeft - shiftLeft - panelHeight;
+        const scale = Math.min(canvasAreaWidth / displayWidth, canvasAreaHeight / displayHeight);
+        const scaledDisplayWidth = displayWidth * scale;
+        const scaledDisplayHeight = displayHeight * scale;
+        const offsetX = shiftLeft + (canvasAreaWidth - scaledDisplayWidth) / 2;
+        const offsetY = shiftLeft + panelHeight + (canvasAreaHeight - scaledDisplayHeight) / 2;
+
+        return {
+            displayMinX, displayMinY,
+            scale, offsetX, offsetY,
+            scaledDisplayWidth, scaledDisplayHeight,
+            frozen: false
+        };
+    }
 
     initInteractions(node) {
         const { shiftLeft, shiftRight, panelHeight } = this.state.layout;
@@ -198,32 +246,13 @@ class ycImageCrop {
                 }
             }
 
-            // 计算扩展后的显示范围
-            const displayMinX = Math.min(0, node.properties.cropX);
-            const displayMinY = Math.min(0, node.properties.cropY);
-            const displayMaxX = Math.max(node.properties.sourceWidth, node.properties.cropX + node.properties.cropWidth);
-            const displayMaxY = Math.max(node.properties.sourceHeight, node.properties.cropY + node.properties.cropHeight);
-            const displayWidth = displayMaxX - displayMinX;
-            const displayHeight = displayMaxY - displayMinY;
-
-            // 计算画布区域
-            const canvasAreaWidth = node.size[0] - shiftRight - shiftLeft;
-            const canvasAreaHeight = node.size[1] - shiftLeft - shiftLeft - panelHeight;
-            const scale = Math.min(
-                canvasAreaWidth / displayWidth,
-                canvasAreaHeight / displayHeight
-            );
-            const scaledDisplayWidth = displayWidth * scale;
-            const scaledDisplayHeight = displayHeight * scale;
-            const offsetX = shiftLeft + (canvasAreaWidth - scaledDisplayWidth) / 2;
-            const offsetY = shiftLeft + panelHeight + (canvasAreaHeight - scaledDisplayHeight) / 2;
-
-            // 转换为图片坐标（考虑扩展区域的偏移）
-            const imgX = (localPos[0] - offsetX) / scale + displayMinX;
-            const imgY = (localPos[1] - offsetY) / scale + displayMinY;
+            // 取当前（动态）坐标系，用于命中检测
+            const m = this._getDisplayMetrics(node);
+            const imgX = (localPos[0] - m.offsetX) / m.scale + m.displayMinX;
+            const imgY = (localPos[1] - m.offsetY) / m.scale + m.displayMinY;
 
             // 检查是否点击裁切框的控制点或边
-            const handle = this.getHandleAtPoint(node, imgX, imgY, scale);
+            const handle = this.getHandleAtPoint(node, imgX, imgY, m.scale);
             if (handle) {
                 node.properties.isDragging = true;
                 node.properties.dragHandle = handle;
@@ -233,6 +262,16 @@ class ycImageCrop {
                 node.properties.dragStartCropY = node.properties.cropY;
                 node.properties.dragStartCropWidth = node.properties.cropWidth;
                 node.properties.dragStartCropHeight = node.properties.cropHeight;
+
+                // 关键修复：冻结当前显示坐标系，整个拖拽过程使用同一套 scale/offset，
+                // 避免裁剪框扩张 → 显示区扩张 → scale 变小 → imgX 漂移 的自反馈循环。
+                node.properties.dragStartScale = m.scale;
+                node.properties.dragStartOffsetX = m.offsetX;
+                node.properties.dragStartOffsetY = m.offsetY;
+                node.properties.dragStartDisplayMinX = m.displayMinX;
+                node.properties.dragStartDisplayMinY = m.displayMinY;
+                node.properties.dragStartScaledWidth = m.scaledDisplayWidth;
+                node.properties.dragStartScaledHeight = m.scaledDisplayHeight;
                 return true;
             }
 
@@ -240,63 +279,24 @@ class ycImageCrop {
         };
 
         node.onMouseMove = (e, localPos, graphCanvas) => {
+            // 不论是否在拖拽，_getDisplayMetrics 都会自动选择「冻结快照」或「动态计算」
+            const m = this._getDisplayMetrics(node);
+            const imgX = (localPos[0] - m.offsetX) / m.scale + m.displayMinX;
+            const imgY = (localPos[1] - m.offsetY) / m.scale + m.displayMinY;
+
             if (!node.properties.isDragging) {
-                // 更新鼠标样式
-                const displayMinX = Math.min(0, node.properties.cropX);
-                const displayMinY = Math.min(0, node.properties.cropY);
-                const displayMaxX = Math.max(node.properties.sourceWidth, node.properties.cropX + node.properties.cropWidth);
-                const displayMaxY = Math.max(node.properties.sourceHeight, node.properties.cropY + node.properties.cropHeight);
-                const displayWidth = displayMaxX - displayMinX;
-                const displayHeight = displayMaxY - displayMinY;
-
-                const canvasAreaWidth = node.size[0] - shiftRight - shiftLeft;
-                const canvasAreaHeight = node.size[1] - shiftLeft - shiftLeft - panelHeight;
-                const scale = Math.min(
-                    canvasAreaWidth / displayWidth,
-                    canvasAreaHeight / displayHeight
-                );
-                const scaledDisplayWidth = displayWidth * scale;
-                const scaledDisplayHeight = displayHeight * scale;
-                const offsetX = shiftLeft + (canvasAreaWidth - scaledDisplayWidth) / 2;
-                const offsetY = shiftLeft + panelHeight + (canvasAreaHeight - scaledDisplayHeight) / 2;
-
-                const imgX = (localPos[0] - offsetX) / scale + displayMinX;
-                const imgY = (localPos[1] - offsetY) / scale + displayMinY;
-
-                const handle = this.getHandleAtPoint(node, imgX, imgY, scale);
-                if (handle) {
-                    graphCanvas.canvas.style.cursor = this.getCursorForHandle(handle);
-                } else {
-                    graphCanvas.canvas.style.cursor = "default";
-                }
+                // 仅 hover：更新光标样式
+                const handle = this.getHandleAtPoint(node, imgX, imgY, m.scale);
+                graphCanvas.canvas.style.cursor = handle ? this.getCursorForHandle(handle) : "default";
                 return false;
             }
 
-            // 拖拽中
-            const displayMinX = Math.min(0, node.properties.cropX);
-            const displayMinY = Math.min(0, node.properties.cropY);
-            const displayMaxX = Math.max(node.properties.sourceWidth, node.properties.cropX + node.properties.cropWidth);
-            const displayMaxY = Math.max(node.properties.sourceHeight, node.properties.cropY + node.properties.cropHeight);
-            const displayWidth = displayMaxX - displayMinX;
-            const displayHeight = displayMaxY - displayMinY;
-
-            const canvasAreaWidth = node.size[0] - shiftRight - shiftLeft;
-            const canvasAreaHeight = node.size[1] - shiftLeft - shiftLeft - panelHeight;
-            const scale = Math.min(
-                canvasAreaWidth / displayWidth,
-                canvasAreaHeight / displayHeight
-            );
-            const scaledDisplayWidth = displayWidth * scale;
-            const scaledDisplayHeight = displayHeight * scale;
-            const offsetX = shiftLeft + (canvasAreaWidth - scaledDisplayWidth) / 2;
-            const offsetY = shiftLeft + panelHeight + (canvasAreaHeight - scaledDisplayHeight) / 2;
-
-            const imgX = (localPos[0] - offsetX) / scale + displayMinX;
-            const imgY = (localPos[1] - offsetY) / scale + displayMinY;
-
+            // 拖拽中：使用 onMouseDown 时冻结的坐标系反算图片坐标
+            // 由于 m 直接来自冻结快照，scale/offset/displayMin 全程不变，
+            // 鼠标在屏幕上的位移会线性映射到图片坐标，不会再出现自反馈飘移。
             this.updateCropByDrag(node, imgX, imgY);
             this.syncWidgets(node);
-            
+
             if (graphCanvas.dirty_canvas !== true) {
                 graphCanvas.setDirty(true, true);
             }
@@ -507,25 +507,15 @@ class ycImageCrop {
             ctx.lineWidth = 1;
             ctx.strokeRect(shiftLeft - 4, shiftLeft - 4, node.size[0] - shiftRight - shiftLeft + 8, panelHeight);
 
-            // 计算扩展后的显示范围（包含裁切框的所有区域）
-            const displayMinX = Math.min(0, node.properties.cropX);
-            const displayMinY = Math.min(0, node.properties.cropY);
-            const displayMaxX = Math.max(node.properties.sourceWidth, node.properties.cropX + node.properties.cropWidth);
-            const displayMaxY = Math.max(node.properties.sourceHeight, node.properties.cropY + node.properties.cropHeight);
-            const displayWidth = displayMaxX - displayMinX;
-            const displayHeight = displayMaxY - displayMinY;
-
-            // 计算画布区域和缩放
-            const canvasAreaWidth = node.size[0] - shiftRight - shiftLeft;
-            const canvasAreaHeight = node.size[1] - shiftLeft - shiftLeft - panelHeight;
-            const scale = Math.min(
-                canvasAreaWidth / displayWidth,
-                canvasAreaHeight / displayHeight
-            );
-            const scaledDisplayWidth = displayWidth * scale;
-            const scaledDisplayHeight = displayHeight * scale;
-            const offsetX = shiftLeft + (canvasAreaWidth - scaledDisplayWidth) / 2;
-            const offsetY = shiftLeft + panelHeight + (canvasAreaHeight - scaledDisplayHeight) / 2;
+            // 拖拽中使用冻结快照，非拖拽走动态计算（视图自适应）
+            const metrics = this._getDisplayMetrics(node);
+            const displayMinX = metrics.displayMinX;
+            const displayMinY = metrics.displayMinY;
+            const scale = metrics.scale;
+            const scaledDisplayWidth = metrics.scaledDisplayWidth;
+            const scaledDisplayHeight = metrics.scaledDisplayHeight;
+            const offsetX = metrics.offsetX;
+            const offsetY = metrics.offsetY;
 
             // 计算原图在显示区域中的位置
             const sourceX = offsetX + (0 - displayMinX) * scale;
@@ -585,11 +575,14 @@ class ycImageCrop {
             // 绘制按钮
             this.drawButtons(ctx, node);
 
-            // 绘制信息文本
+            // 绘制信息文本（"Extended" 用实际裁剪框判断，不受冻结视图影响）
             ctx.fillStyle = LiteGraph.NODE_TEXT_COLOR;
             ctx.font = `${fontsize}px Arial`;
             ctx.textAlign = "center";
-            const extendInfo = (displayMinX < 0 || displayMinY < 0 || displayMaxX > node.properties.sourceWidth || displayMaxY > node.properties.sourceHeight) 
+            const p = node.properties;
+            const extendInfo = (p.cropX < 0 || p.cropY < 0
+                || p.cropX + p.cropWidth > p.sourceWidth
+                || p.cropY + p.cropHeight > p.sourceHeight)
                 ? " (Extended)" : "";
             ctx.fillText(
                 `Source: ${node.properties.sourceWidth}×${node.properties.sourceHeight} | Crop: ${Math.round(node.properties.cropWidth)}×${Math.round(node.properties.cropHeight)}${extendInfo}`,
@@ -1256,4 +1249,4 @@ app.registerExtension({
     }
 });
 
-// author.yichengup.ImageCrop 2026.04.XX
+// author.yichengup.ImageCrop 2026.05.XX
